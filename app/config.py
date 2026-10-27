@@ -57,11 +57,11 @@ MAX_DAYS_AHEAD = int(os.getenv("MAX_DAYS_AHEAD", "30"))
 # When true, a booking can only be made by speaking into the microphone (typed text gets a notice).
 VOICE_ONLY_BOOKING = os.getenv("VOICE_ONLY_BOOKING", "true").lower() in ("1", "true", "yes")
 # MySQL database for seats, opening hours and bookings (created automatically on first start)
-MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
-MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
-MYSQL_USER = os.getenv("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
-MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "cafe_voice_bot")
+MYSQL_HOST = os.getenv("HOST", "127.0.0.1")
+MYSQL_PORT = int(os.getenv("PORT", "3306"))
+MYSQL_USER = os.getenv("USER", "root")
+MYSQL_PASSWORD = os.getenv("PASSWORD", "")
+MYSQL_DATABASE = os.getenv("DATABASE", "cafe_voice_bot")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")   # if set, seat/hours edits need header X-Admin-Token
 
 # Fallback only: the live prompt (with real opening hours and seat counts) comes from cafe.system_prompt().

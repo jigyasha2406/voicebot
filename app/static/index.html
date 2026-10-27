@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cafe seat booking by voice</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Hind:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #e6eeea;
+    --panel: #f6faf8;
+    --ink: #14233a;
+    --ink-soft: #52627a;
+    --line: #c9d7d1;
+    --stt: #8fb8e0;
+    --llm: #1f7a6d;
+    --tts: #e8a317;
+    --net: #a9b8b2;
+    --bad: #b3261e;
+    --display: "Bricolage Grotesque", "Hind", system-ui, sans-serif;
+    --body: "Hind", "Noto Sans Devanagari", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0; color: var(--ink); background: var(--bg);
+    font: 400 1rem/1.55 var(--body);
+  }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--tts); outline-offset: 2px; }
+
+  .shell {
+    max-width: 1380px; margin: 0 auto; padding: 24px 16px 64px;
+    display: grid; grid-template-columns: 250px minmax(0, 1fr) 340px; gap: 24px; align-items: start;
+  }
+  header { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px 24px; }
+  h1 { font: 700 1.75rem/1.1 var(--display); margin: 0; letter-spacing: -0.01em; }
+  .engine { color: var(--ink-soft); font-size: .9rem; }
+
+  /* conversation */
+  .chat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-height: 560px; }
+  .log { flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; max-height: 560px; }
+  .empty { margin: auto; text-align: center; color: var(--ink-soft); max-width: 32ch; }
+  .msg { max-width: 82%; }
+  .msg.user { align-self: flex-end; text-align: right; }
+  .bubble { padding: 10px 14px; border-radius: 14px; display: inline-block; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .user .bubble { background: var(--ink); color: #f6faf8; border-bottom-right-radius: 4px; }
+  .bot .bubble { background: #e3ece8; border-bottom-left-radius: 4px; }
+  .meta { font-size: .8rem; color: var(--ink-soft); margin-top: 4px; display: flex; gap: 4px 14px; flex-wrap: wrap; }
+  .user .meta { justify-content: flex-end; }
+  .meta b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .meta .err { color: var(--bad); }
+
+  .composer { border-top: 1px solid var(--line); padding: 14px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .mic {
+    width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer; flex: none;
+    background: var(--ink); color: #fff; display: grid; place-items: center; transition: background .15s, transform .1s;
+  }
+  .mic:hover { background: #22375a; }
+  .mic:active { transform: scale(.96); }
+  .mic[aria-pressed="true"] { background: var(--bad); animation: pulse 1.3s ease-in-out infinite; }
+  .mic:disabled { opacity: .5; cursor: progress; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(179,38,30,.45); } 50% { box-shadow: 0 0 0 12px rgba(179,38,30,0); } }
+  .composer input[type=text] { flex: 1 1 200px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .btn { padding: 11px 16px; border-radius: 10px; border: 1px solid var(--ink); background: transparent; cursor: pointer; font-weight: 500; }
+  .btn:hover { background: var(--ink); color: #fff; }
+  .btn.primary { background: var(--tts); border-color: var(--tts); color: var(--ink); font-weight: 600; }
+  .btn.primary:hover { background: #f2b52f; color: var(--ink); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .status { width: 100%; font-size: .9rem; color: var(--ink-soft); min-height: 1.4em; }
+  .status.err { color: var(--bad); }
+  .options { width: 100%; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: .9rem; color: var(--ink-soft); }
+  .options select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+  .linkbtn { background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; color: var(--ink-soft); }
+
+  /* history sidebar */
+  .convs { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 16px; max-height: calc(100vh - 32px); }
+  .convs-head { display: flex; justify-content: space-between; align-items: center; }
+  .convs h2 { font: 700 1.05rem/1.2 var(--display); margin: 0; }
+  .convs input[type=search] { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .btn.small { padding: 6px 12px; font-size: .88rem; }
+  #convlist { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: grid; gap: 4px; min-height: 80px; }
+  #convlist li { display: grid; grid-template-columns: minmax(0, 1fr); border-radius: 10px; border: 1px solid transparent; }
+  #convlist li.active { background: #e3ece8; border-color: var(--line); }
+  #convlist li:hover { background: #edf4f0; }
+  .conv-open { text-align: left; background: none; border: 0; padding: 8px 10px 2px; cursor: pointer; min-width: 0; border-radius: 10px; }
+  .conv-title { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-sub { display: block; font-size: .8rem; color: var(--ink-soft); }
+  .conv-actions { display: flex; justify-content: flex-end; padding: 0 4px 4px; }
+  .icon { background: none; border: 0; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; color: var(--ink-soft); display: grid; place-items: center; text-decoration: none; }
+  .icon:hover { background: var(--line); color: var(--ink); }
+  .icon.danger:hover { background: #f5d6d3; color: var(--bad); }
+  .convs-empty { color: var(--ink-soft); font-size: .9rem; padding: 6px 4px; }
+  .linkbtn.danger { color: var(--bad); align-self: flex-start; }
+
+  /* stopwatch panel */
+  aside { position: sticky; top: 16px; display: grid; gap: 16px; }
+  .watch { background: var(--ink); color: #f6faf8; border-radius: 14px; padding: 22px 22px 20px; }
+  .watch h2 { font: 500 .95rem/1.3 var(--body); margin: 0; color: #b9c6d8; }
+  .readout { font: 700 4.6rem/1 var(--display); letter-spacing: -0.03em; margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+  .readout small { font-size: 1.4rem; font-weight: 500; margin-left: 4px; color: #b9c6d8; letter-spacing: 0; }
+  .readout-note { color: #b9c6d8; font-size: .85rem; min-height: 2.6em; }
+  .bar { display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: #2a3d5c; margin: 16px 0 12px; }
+  .bar span { display: block; height: 100%; transition: flex-grow .5s cubic-bezier(.2,.8,.2,1); flex-grow: 0; min-width: 0; }
+  .legend { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: .92rem; }
+  .legend li { display: grid; grid-template-columns: 12px 1fr auto; gap: 10px; align-items: center; }
+  .legend i { width: 12px; height: 12px; border-radius: 3px; display: block; }
+  .legend b { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .legend .sum { border-top: 1px solid #2f4468; padding-top: 8px; margin-top: 4px; }
+  .legend .sum i { visibility: hidden; }
+
+  .summary { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; }
+  .summary h2 { font: 700 1rem/1.3 var(--display); margin: 0 0 8px; }
+  .summary dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: .92rem; }
+  .summary dt { color: var(--ink-soft); }
+  .summary dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* history */
+  .history { grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .history-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .history h2 { font: 700 1.15rem/1.2 var(--display); margin: 0; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; min-width: 860px; }
+  th { text-align: left; font-weight: 600; color: var(--ink-soft); padding: 8px 10px; border-bottom: 2px solid var(--line); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.text { max-width: 260px; overflow-wrap: anywhere; }
+  td.when { white-space: nowrap; }
+  .tag { padding: 2px 8px; border-radius: 99px; font-size: .78rem; background: #dbe7e1; }
+  .tag.bad { background: #f5d6d3; color: var(--bad); }
+
+  /* cafe seats panel */
+  .cafe { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; }
+  .cafe-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .cafe h2 { font: 700 1rem/1.3 var(--display); margin: 0; }
+  .cafe h3 { font: 600 .9rem/1.3 var(--body); margin: 14px 0 6px; color: var(--ink-soft); }
+  .cafe input[type=date] { padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: .85rem; }
+  .cafe-hours { font-size: .85rem; color: var(--ink-soft); margin: 4px 0 10px; }
+  .seats { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .seat { border: 1px solid var(--line); border-radius: 10px; padding: 6px 9px; background: #fff; font-size: .82rem; line-height: 1.35; }
+  .seat b { display: block; font-size: .88rem; }
+  .seat.special { border-left: 4px solid var(--tts); }
+  .seat.normal { border-left: 4px solid var(--llm); }
+  .seat.busy { background: #fbf3dc; }
+  .seat.off { opacity: .5; }
+  .seat small { color: var(--ink-soft); display: block; }
+  .bookings { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .85rem; max-height: 190px; overflow-y: auto; }
+  .bookings li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; border-bottom: 1px solid var(--line); padding: 3px 0; }
+  .bookings .code { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .mic[aria-pressed="true"][data-auto="true"] { background: var(--llm); animation: pulseg 1.3s ease-in-out infinite; }
+  @keyframes pulseg { 0%,100% { box-shadow: 0 0 0 0 rgba(31,122,109,.5); } 50% { box-shadow: 0 0 0 12px rgba(31,122,109,0); } }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    header { order: -2; }
+    aside { position: static; order: -1; }
+    .convs { position: static; max-height: 340px; }
+    .readout { font-size: 3.6rem; }
+    .msg { max-width: 92%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mic[aria-pressed="true"] { animation: none; }
+    .mic[aria-pressed="true"][data-auto="true"] { animation: none; }
+    .bar span { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <h1 id="title">Cafe seat booking</h1>
+    <div class="engine" id="engine">Connecting to the server…</div>
+  </header>
+
+  <nav class="convs" aria-label="Conversation history">
+    <div class="convs-head"><h2>History</h2><button class="btn small" id="newconv" type="button">New chat</button></div>
+    <input type="search" id="search" placeholder="Search conversations" aria-label="Search conversations">
+    <ul id="convlist"></ul>
+    <button class="linkbtn danger" id="clearall" type="button">Delete all history</button>
+  </nav>
+
+  <main class="chat" aria-label="Conversation">
+    <div class="log" id="log" aria-live="polite">
+      <p class="empty" id="empty">Tap the microphone and say <b>“I want to book a table”</b>, in English, Hindi or Hinglish. You can also ask about timings or free seats. Every reply is timed.</p>
+    </div>
+    <div class="composer">
+      <button class="mic" id="mic" aria-pressed="false" aria-label="Start recording" title="Start recording">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      </button>
+      <input type="text" id="text" placeholder="Or type a question (bookings are voice only)" autocomplete="off" aria-label="Type a question">
+      <button class="btn primary" id="send">Send</button>
+      <div class="status" id="status" role="status"></div>
+      <div class="options">
+        <label>Voice from
+          <select id="tts"></select>
+        </label>
+        <label title="During a booking, the microphone opens again by itself after each question and sends when you pause.">
+          <input type="checkbox" id="handsfree" checked> Keep listening during a booking
+        </label>
+      </div>
+    </div>
+  </main>
+
+  <aside>
+    <section class="cafe" aria-labelledby="cafe-h">
+      <div class="cafe-head"><h2 id="cafe-h">Seats and bookings</h2><input type="date" id="cafe-date" aria-label="Day to show"></div>
+      <div class="cafe-hours" id="cafe-hours"></div>
+      <ul class="seats" id="seats"></ul>
+      <h3>Bookings that day</h3>
+      <ul class="bookings" id="bookings"><li><span></span><span>No bookings yet</span><span></span></li></ul>
+    </section>
+    <section class="watch" aria-labelledby="watch-h">
+      <h2 id="watch-h">Time from end of your question to the bot's voice</h2>
+      <div class="readout" id="readout">–<small>s</small></div>
+      <div class="readout-note" id="readout-note">Ask something to see the timing.</div>
+      <div class="bar" id="bar" role="img" aria-label="Share of time spent in each stage"></div>
+      <ul class="legend" id="legend"></ul>
+    </section>
+    <section class="summary" aria-labelledby="sum-h">
+      <h2 id="sum-h">All replies so far</h2>
+      <dl id="summary"><dt>No replies yet</dt><dd></dd></dl>
+    </section>
+  </aside>
+
+  <section class="history" aria-labelledby="hist-h">
+    <div class="history-head">
+      <h2 id="hist-h">Conversation metadata</h2>
+      <a class="btn" href="/api/turns.csv" download>Download CSV</a>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>Date and time</th><th>You said</th><th>Bot replied</th>
+          <th class="num">Speech to text</th><th class="num">LLM</th><th class="num">Voice</th>
+          <th class="num">Server total</th><th class="num">To first sound</th><th>Answered by (function)</th><th>Status</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const newId = () => (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()) + Math.random().toString(16).slice(2);
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* optional */ } },
+};
+let sessionId = store.get("voicebot.conversation") || newId();
+const STAGES = [
+  { key: "stt_seconds", label: "Speech to text", color: "var(--stt)" },
+  { key: "llm_first_sentence_seconds", label: "LLM (first sentence)", color: "var(--llm)" },
+  { key: "tts_first_seconds", label: "Voice (first sentence)", color: "var(--tts)" },
+  { key: "network", label: "Upload, download and browser", color: "var(--net)" },
+];
+const fmt = (v, d = 2) => (v == null || Number.isNaN(v) ? "–" : Number(v).toFixed(d));
+
+let recorder = null, chunks = [], stream = null, busy = false;
+
+function setStatus(msg, isErr = false) { $("status").textContent = msg; $("status").className = "status" + (isErr ? " err" : ""); }
+function setBusy(b) { busy = b; $("mic").disabled = b; $("send").disabled = b; }
+
+// ---------- rendering
+function addMessage(role, text, metaParts) {
+  $("empty")?.remove();
+  const wrap = document.createElement("div");
+  wrap.className = "msg " + role;
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.textContent = text || "(nothing heard)";
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  for (const [label, value, cls] of metaParts) {
+    const s = document.createElement("span");
+    if (cls) s.className = cls;
+    s.append(label ? label + " " : "");
+    const b = document.createElement("b"); b.textContent = value; s.append(b);
+    meta.append(s);
+  }
+  wrap.append(bubble, meta);
+  $("log").append(wrap);
+  $("log").scrollTop = $("log").scrollHeight;
+  return meta;
+}
+
+function renderWatch(m) {
+  const headline = m.client_time_to_audio_seconds ?? m.server_first_audio_seconds ?? m.server_total_seconds;
+  $("readout").innerHTML = fmt(headline) + "<small>s</small>";
+  const over = headline != null && headline > 1.5;   // 1.5 s target
+  $("readout").style.color = over ? "#ff8a80" : "";
+  const clientKnown = m.client_time_to_audio_seconds != null;
+  $("readout-note").textContent = (over ? "Over the 1.5 s target. " : "") + (clientKnown
+    ? "Measured in your browser, from the moment you stopped speaking until the bot's voice started."
+    : "Server time only. The browser measurement was not available for this reply.");
+  const serverFirst = m.server_first_audio_seconds ?? m.server_total_seconds;
+  const network = clientKnown ? Math.max(0, m.client_time_to_audio_seconds - serverFirst) : 0;
+  const parts = STAGES.map((s) => ({ ...s, value: s.key === "network" ? network : (m[s.key] || 0) }));
+  const bar = $("bar"); bar.replaceChildren();
+  for (const p of parts) {
+    const seg = document.createElement("span");
+    seg.style.background = p.color; seg.title = `${p.label}: ${fmt(p.value)} s`;
+    bar.append(seg);
+    requestAnimationFrame(() => requestAnimationFrame(() => { seg.style.flexGrow = p.value; }));
+  }
+  const legend = $("legend"); legend.replaceChildren();
+  for (const p of parts) {
+    if (p.key === "network" && !clientKnown) continue;
+    const li = document.createElement("li");
+    li.innerHTML = `<i style="background:${p.color}"></i><span></span><b></b>`;
+    li.children[1].textContent = p.label; li.children[2].textContent = fmt(p.value) + " s";
+    legend.append(li);
+  }
+  if (m.tts_seconds != null) {
+    const tl = document.createElement("li");
+    tl.innerHTML = "<i></i><span>Voice (TTS) total, all chunks</span><b></b>";
+    tl.children[2].textContent = fmt(m.tts_seconds) + " s";
+    legend.append(tl);
+  }
+  const sum = document.createElement("li"); sum.className = "sum";
+  sum.innerHTML = "<i></i><span>Total</span><b></b>";
+  sum.children[2].textContent = fmt(headline) + " s";
+  legend.append(sum);
+  if (m.playback_seconds != null) {
+    const pl = document.createElement("li");
+    pl.innerHTML = "<i></i><span>Bot speaking time (not counted above)</span><b></b>";
+    pl.children[2].textContent = fmt(m.playback_seconds) + " s";
+    legend.append(pl);
+  }
+}
+
+async function refreshTable() {
+  const [turns, stats] = await Promise.all([fetch("/api/turns?limit=30").then(r => r.json()), fetch("/api/stats").then(r => r.json())]);
+  const tbody = $("rows"); tbody.replaceChildren();
+  for (const t of turns) {
+    const tr = document.createElement("tr");
+    const cell = (text, cls) => { const td = document.createElement("td"); if (cls) td.className = cls; td.textContent = text; tr.append(td); return td; };
+    cell(`${t.date} ${t.time} ${t.timezone || ""}`, "when");
+    cell(t.user_input, "text"); cell(t.bot_response, "text");
+    cell(fmt(t.stt_seconds), "num"); cell(fmt(t.llm_seconds), "num"); cell(fmt(t.tts_seconds), "num");
+    cell(fmt(t.server_total_seconds), "num"); cell(fmt(t.client_time_to_audio_seconds), "num");
+    cell(t.answer_function || "–", "text");
+    const td = cell("", ""); const tag = document.createElement("span");
+    tag.className = "tag" + (["success", "exit"].includes(t.status) ? "" : " bad"); tag.textContent = t.status; td.append(tag);
+    tbody.append(tr);
+  }
+  const s = stats.client_time_to_audio || stats.server_total;
+  const dl = $("summary"); dl.replaceChildren();
+  if (!s) { dl.innerHTML = "<dt>No replies yet</dt><dd></dd>"; return; }
+  for (const [k, v] of [["Replies timed", s.count], ["Average", fmt(s.average) + " s"], ["Median", fmt(s.median) + " s"], ["Fastest", fmt(s.fastest) + " s"], ["Slowest", fmt(s.slowest) + " s"]]) {
+    const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; dl.append(dt, dd);
+  }
+}
+
+// ---------- cafe seats panel (data comes from the cafe database via /api/cafe/overview)
+const todayStr = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+async function refreshCafe() {
+  const day = $("cafe-date").value || todayStr();
+  let o;
+  try { o = await fetch("/api/cafe/overview?date=" + encodeURIComponent(day)).then((r) => r.json()); } catch { return; }
+  $("cafe-hours").textContent = `${o.weekday}: ` + (o.closed ? "closed" : `open ${o.open} to ${o.close}`);
+  const ul = $("seats"); ul.replaceChildren();
+  for (const s of o.seats) {
+    const li = document.createElement("li");
+    li.className = `seat ${s.kind}` + (s.bookings.length ? " busy" : "") + (s.active ? "" : " off");
+    const b = document.createElement("b"); b.textContent = s.name;
+    const a = document.createElement("small"); a.textContent = `${s.capacity} seats, ${s.kind}` + (s.active ? "" : ", not in use");
+    const c = document.createElement("small");
+    c.textContent = s.bookings.length ? s.bookings.map((x) => `${x.from}-${x.to}`).join(", ") : "free all day";
+    li.append(b, a, c); ul.append(li);
+  }
+  const bl = $("bookings"); bl.replaceChildren();
+  if (!o.bookings.length) { const li = document.createElement("li"); li.innerHTML = "<span></span><span></span><span></span>"; li.children[1].textContent = "No bookings yet"; bl.append(li); }
+  for (const k of o.bookings) {
+    const li = document.createElement("li");
+    li.innerHTML = '<span class="code"></span><span></span><span></span>';
+    li.children[0].textContent = "#" + k.code;
+    li.children[1].textContent = `${k.name}, ${k.party} ${k.party === 1 ? "person" : "people"}, ${k.kind}`;
+    const h = Math.floor(k.start_min / 60), m = k.start_min % 60;
+    li.children[2].textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    bl.append(li);
+  }
+}
+$("cafe-date").value = todayStr();
+$("cafe-date").addEventListener("change", refreshCafe);
+setInterval(refreshCafe, 30000);
+
+// ---------- history management
+const EMPTY_TEXT = "Tap the microphone and say “I want to book a table”, in English, Hindi or Hinglish. You can also ask about timings or free seats. Every reply is timed.";
+function clearChat(text = EMPTY_TEXT) {
+  $("log").replaceChildren(Object.assign(document.createElement("p"), { className: "empty", id: "empty", textContent: text }));
+}
+const when = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
+let searchTimer = null;
+
+async function refreshConvs() {
+  const q = $("search").value.trim();
+  let list = [];
+  try { list = await fetch("/api/conversations" + (q ? "?q=" + encodeURIComponent(q) : "")).then((r) => r.json()); } catch { return; }
+  const ul = $("convlist"); ul.replaceChildren();
+  if (!list.length) {
+    const li = document.createElement("li"); li.style.display = "block";
+    li.innerHTML = '<p class="convs-empty"></p>'; li.firstChild.textContent = q ? "No conversation matches your search." : "Saved conversations appear here after your first question.";
+    ul.append(li); return;
+  }
+  for (const c of list) {
+    const li = document.createElement("li"); if (c.id === sessionId) li.className = "active";
+    const open = document.createElement("button"); open.className = "conv-open"; open.type = "button";
+    const t = document.createElement("span"); t.className = "conv-title"; t.textContent = c.title; t.title = c.title;
+    const sub = document.createElement("span"); sub.className = "conv-sub";
+    sub.textContent = `${when(c.updated_at)}, ${c.turn_count} ${c.turn_count === 1 ? "reply" : "replies"}`;
+    open.append(t, sub); open.addEventListener("click", () => openConversation(c.id));
+    const actions = document.createElement("div"); actions.className = "conv-actions";
+    const mk = (label, svg, cls, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "icon " + cls; b.title = label; b.setAttribute("aria-label", label + ": " + c.title); b.innerHTML = svg; b.addEventListener("click", fn); return b; };
+    const stroke = 'width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+    const dl = document.createElement("a"); dl.className = "icon"; dl.href = "/api/turns.csv?session_id=" + encodeURIComponent(c.id); dl.title = "Download CSV"; dl.setAttribute("aria-label", "Download CSV: " + c.title); dl.download = "";
+    dl.innerHTML = `<svg ${stroke}><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>`;
+    actions.append(
+      mk("Rename", `<svg ${stroke}><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>`, "", () => renameConversation(c)),
+      dl,
+      mk("Delete", `<svg ${stroke}><path d="M5 7h14M10 7V4h4v3m-6 0 1 13h6l1-13"/></svg>`, "danger", () => deleteConversation(c)),
+    );
+    li.append(open, actions); ul.append(li);
+  }
+}
+
+function renderTurns(turns) {
+  clearChat();
+  for (const t of turns) {
+    const stamp = `${t.date} ${t.time}`;
+    addMessage("user", t.user_input, [["", stamp], t.input_mode === "voice" ? ["speech to text", fmt(t.stt_seconds) + " s"] : ["", "typed"]]);
+    const parts = [["", stamp], ["server", fmt(t.server_total_seconds) + " s"], ["answered by", t.answer_function || "–"]];
+    if (t.client_time_to_audio_seconds != null) parts.push(["to first sound", fmt(t.client_time_to_audio_seconds) + " s"]);
+    if (t.status === "tts_error" || t.status === "error") parts.push(["", t.error, "err"]);
+    addMessage("bot", t.bot_response || "No reply: " + t.error, parts);
+  }
+}
+
+async function openConversation(id) {
+  if (busy) return;
+  cancelListening();
+  const res = await fetch("/api/conversations/" + encodeURIComponent(id));
+  if (!res.ok) { newConversation(); return; }
+  const conv = await res.json();
+  sessionId = id; store.set("voicebot.conversation", id);
+  renderTurns(conv.turns);
+  if (conv.turns.length) renderWatch(conv.turns[conv.turns.length - 1]);
+  setStatus(""); refreshConvs();
+}
+
+function newConversation() {
+  if (busy) return;
+  cancelListening();
+  sessionId = newId(); store.set("voicebot.conversation", sessionId);
+  clearChat("New conversation. Your earlier chats are saved under History."); setStatus(""); refreshConvs();
+}
+
+async function renameConversation(c) {
+  const title = prompt("Rename conversation", c.title);
+  if (title === null || !title.trim()) return;
+  await fetch("/api/conversations/" + encodeURIComponent(c.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+  refreshConvs();
+}
+
+async function deleteConversation(c) {
+  if (!confirm(`Delete "${c.title}" and its ${c.turn_count} saved replies? This cannot be undone.`)) return;
+  await fetch("/api/conversations/" + encodeURIComponent(c.id), { method: "DELETE" });
+  if (c.id === sessionId) newConversation(); else refreshConvs();
+  refreshTable();
+}
+
+$("newconv").addEventListener("click", newConversation);
+$("search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(refreshConvs, 250); });
+$("clearall").addEventListener("click", async () => {
+  if (!confirm("Delete all saved conversations and their timing data? This cannot be undone.")) return;
+  await fetch("/api/conversations", { method: "DELETE" });
+  newConversation(); refreshTable();
+});
+
+// ---------- sending a turn (the server streams newline-delimited JSON events)
+async function* readEvents(res) {
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const d = data.detail;
+    throw new Error((d && d.message) || (typeof d === "string" ? d : "The server could not answer."));
+  }
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (line) yield JSON.parse(line);
+    }
+  }
+  if (buf.trim()) yield JSON.parse(buf);
+}
+
+// Plays audio chunks back to back; reports when the first one starts and when the last one ends.
+class Player {
+  constructor(tStart, onFirst) { this.q = []; this.cur = null; this.tStart = tStart; this.onFirst = onFirst; this.firstAt = null; this.finished = false; this.waiters = []; this.blocked = false; }
+  add(mime, b64) {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const a = new Audio(URL.createObjectURL(new Blob([bytes], { type: mime })));
+    a.preload = "auto"; this.q.push(a); this.#next();
+  }
+  #next() {
+    if (this.cur || !this.q.length) return this.#maybeEnd();
+    const a = this.cur = this.q.shift();
+    a.addEventListener("playing", () => {
+      if (this.firstAt === null) { this.firstAt = performance.now(); this.onFirst((this.firstAt - this.tStart) / 1000); }
+    }, { once: true });
+    a.addEventListener("ended", () => { URL.revokeObjectURL(a.src); this.cur = null; this.#next(); }, { once: true });
+    a.play().catch(() => { this.blocked = true; this.cur = null; this.#maybeEnd(); });
+  }
+  speak(text) {
+    if (!("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = /[\u0900-\u097F]/.test(text) ? "hi-IN" : "en-IN";
+    this.speaking = (this.speaking || 0) + 1;
+    const asked = performance.now();
+    u.onstart = () => {
+      const d = (performance.now() - asked) / 1000;   // TTS timing for browser voice: request -> voice starts
+      if (this.ttsFirst == null) this.ttsFirst = d;
+      this.ttsTotal = (this.ttsTotal || 0) + d; if (this.firstAt === null) { this.firstAt = performance.now(); this.onFirst((this.firstAt - this.tStart) / 1000); } };
+    const done = () => { this.speaking--; this.#maybeEnd(); };
+    u.onend = done; u.onerror = done;
+    speechSynthesis.speak(u);
+  }
+  end() { this.finished = true; return new Promise((res) => { this.waiters.push(res); this.#maybeEnd(); }); }
+  #maybeEnd() {
+    if (this.finished && !this.cur && !this.q.length && !this.speaking) { this.endAt = performance.now(); this.waiters.splice(0).forEach((r) => r()); }
+  }
+}
+
+async function runTurn(res, tStart, userBubble) {
+  let m = null, botMeta = null, botBubble = null, botText = "";
+  const ensureBot = () => {
+    if (botBubble) return;
+    botMeta = addMessage("bot", "…", []);
+    botBubble = botMeta.previousSibling;
+  };
+  let early = null, expectReply = false;
+  const player = new Player(tStart, (secs) => { if (m) { m.client_time_to_audio_seconds = secs; renderWatch(m); } else { early = secs; $("readout").innerHTML = fmt(secs) + "<small>s</small>"; } });
+  for await (const ev of readEvents(res)) {
+    if (ev.type === "transcript") {
+      if (userBubble === null) {
+        userBubble = addMessage("user", ev.text, [["", `${ev.date} ${ev.time}`], ["speech to text", fmt(ev.stt_seconds) + " s"]]);
+      }
+      m = { turn_id: ev.turn_id };
+    } else if (ev.type === "text") {
+      ensureBot(); botText += (botText ? " " : "") + ev.text; botBubble.textContent = botText;
+      $("log").scrollTop = $("log").scrollHeight;
+    } else if (ev.type === "speak") {
+      player.speak(ev.text);
+    } else if (ev.type === "audio") {
+      player.add(ev.mime, ev.data);
+    } else if (ev.type === "error") {
+      throw new Error(ev.message);
+    } else if (ev.type === "done") {
+      expectReply = !!ev.expect_reply;   // a booking is in progress: the page listens again by itself
+      m = { ...ev.metadata, client_time_to_audio_seconds: player.firstAt !== null ? (player.firstAt - tStart) / 1000 : early };
+      ensureBot(); if (!botText) botBubble.textContent = m.bot_response || "No reply";
+      botMeta.replaceChildren();
+      const add = (label, value, cls) => { const sp = document.createElement("span"); if (cls) sp.className = cls; sp.append(label ? label + " " : ""); const b = document.createElement("b"); b.textContent = value; sp.append(b); botMeta.append(sp); };
+      add("", `${m.date} ${m.time}`); add("server", fmt(m.server_total_seconds) + " s"); add("answered by", m.answer_function || "–");
+      if (m.status === "tts_error") add("", "Voice failed: " + m.error, "err");
+      renderWatch(m);
+    }
+  }
+  await player.end();
+  if (m) {
+    if (player.firstAt !== null) m.playback_seconds = (player.endAt - player.firstAt) / 1000;
+    if (player.ttsFirst != null) { m.tts_first_seconds = player.ttsFirst; m.tts_seconds = player.ttsTotal; m.tts_browser = true; }
+    renderWatch(m);
+    if (botMeta) {  // show TTS timing under the reply
+      const sp = document.createElement("span"); sp.append("voice (TTS) first ");
+      const b = document.createElement("b"); b.textContent = fmt(m.tts_first_seconds) + " s"; sp.append(b);
+      sp.append(" · total "); const b2 = document.createElement("b"); b2.textContent = fmt(m.tts_seconds) + " s"; sp.append(b2);
+      botMeta.append(sp);
+    }
+    if (player.blocked) setStatus("Your browser blocked autoplay. Click the page, then try again.", true);
+    await sendClientMetrics(m);
+  }
+  await refreshTable(); refreshConvs(); refreshCafe();
+  return expectReply;
+}
+
+async function sendClientMetrics(m) {
+  try {
+    await fetch(`/api/turns/${m.turn_id}/client-metrics`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ time_to_audio_seconds: m.client_time_to_audio_seconds ?? null, playback_seconds: m.playback_seconds ?? null,
+        tts_first_seconds: m.tts_browser ? m.tts_first_seconds : null, tts_seconds: m.tts_browser ? m.tts_seconds : null }),
+    });
+  } catch { /* metrics are best-effort */ }
+}
+
+function stopSpeech() { if ("speechSynthesis" in window) speechSynthesis.cancel(); }
+
+async function sendText() {
+  stopSpeech();
+  const text = $("text").value.trim();
+  if (!text || busy) return;
+  $("text").value = ""; setBusy(true); setStatus("Thinking…");
+  const tStart = performance.now();
+  const userMeta = addMessage("user", text, [["", "typed"]]);
+  try {
+    const res = await fetch("/api/chat/text", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, session_id: sessionId, tts_provider: $("tts").value || null }) });
+    await runTurn(res, tStart, userMeta); setStatus("");
+  } catch (e) { setStatus(e.message, true); } finally { setBusy(false); }
+}
+
+async function sendAudio(blob, tStop) {
+  setBusy(true); setStatus("Listening to what you said, then thinking…");
+  const form = new FormData();
+  form.append("audio", blob, blob.type.includes("mp4") ? "speech.mp4" : "speech.webm");
+  form.append("session_id", sessionId);
+  if ($("tts").value) form.append("tts_provider", $("tts").value);
+  let again = false;
+  try {
+    const res = await fetch("/api/chat/voice", { method: "POST", body: form });
+    again = await runTurn(res, tStop, null); setStatus("");
+  } catch (e) { setStatus(e.message, true); } finally { setBusy(false); }
+  // booking in progress and the bot has finished speaking: open the microphone again
+  if (again && $("handsfree").checked) setTimeout(() => startRecording(true), 250);
+}
+
+// ---------- microphone
+let discardRecording = false;
+function cancelListening() {
+  if (recorder && recorder.state === "recording") { discardRecording = true; recorder.stop(); }
+}
+
+async function toggleRecording() {
+  if (busy) return;
+  stopSpeech();
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }   // tap again = send now
+  await startRecording(false);
+}
+
+// auto = hands-free: stops by itself ~1 s after you stop talking (or gives up after 8 s of silence).
+async function startRecording(auto) {
+  if (busy || (recorder && recorder.state === "recording")) return;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true } });
+  } catch {
+    setStatus("Microphone access was blocked. Allow it in your browser's address bar, or type your question.", true); return;
+  }
+  chunks = [];
+  let heard = !auto, vad = null, ctx = null;
+  recorder = new MediaRecorder(stream, { audioBitsPerSecond: 24000 }); // small upload = faster
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => {
+    clearInterval(vad); if (ctx) ctx.close().catch(() => {});
+    const tStop = performance.now();              // latency clock starts when the recording stops
+    stream.getTracks().forEach((t) => t.stop());
+    $("mic").setAttribute("aria-pressed", "false"); $("mic").setAttribute("aria-label", "Start recording"); $("mic").dataset.auto = "";
+    if (discardRecording) { discardRecording = false; setStatus(""); return; }
+    if (!heard) { setStatus("I did not hear anything. Tap the microphone to carry on with your booking."); return; }
+    const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+    if (blob.size < 1000) { setStatus("That recording was too short. Try again.", true); return; }
+    sendAudio(blob, tStop);
+  };
+  recorder.start();
+  $("mic").setAttribute("aria-pressed", "true"); $("mic").setAttribute("aria-label", "Stop recording and send"); $("mic").dataset.auto = auto ? "true" : "";
+  if (!auto) { setStatus("Recording. Tap the microphone again when you finish speaking."); return; }
+  setStatus("Listening for your answer. Just speak; I send it when you pause (or tap the microphone to send now).");
+  try {   // simple voice-activity detection on the microphone level
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC(); const an = ctx.createAnalyser(); an.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize), t0 = performance.now();
+    let floor = null, loud = 0, lastVoice = 0; const calib = [];
+    vad = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let sum = 0; for (const v of buf) sum += v * v;
+      const rms = Math.sqrt(sum / buf.length), now = performance.now();
+      if (now - t0 < 400) { calib.push(rms); return; }                       // first 0.4 s: measure room noise
+      if (floor === null) floor = Math.max(0.015, (calib.reduce((a, b) => a + b, 0) / (calib.length || 1)) * 3);
+      if (rms > floor) { loud++; lastVoice = now; if (loud >= 2) heard = true; } else loud = 0;
+      const silentFor = now - lastVoice;
+      if ((heard && silentFor > 1000) || (!heard && now - t0 > 8000) || now - t0 > 25000) { if (recorder.state === "recording") recorder.stop(); }
+    }, 100);
+  } catch { heard = true; }   // no audio analysis available: fall back to tap-to-send
+}
+
+$("mic").addEventListener("click", toggleRecording);
+$("send").addEventListener("click", sendText);
+$("text").addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
+
+(async function init() {
+  try {
+    const cfg = await fetch("/api/config").then((r) => r.json());
+    $("engine").textContent = `Listening: Groq ${cfg.stt_model}. Thinking: Groq ${cfg.llm_model}.`;
+    if (cfg.cafe_name) { $("title").textContent = cfg.cafe_name + " · seat booking"; document.title = cfg.cafe_name + " · seat booking by voice"; }
+    if (!cfg.voice_only_booking) $("text").placeholder = "Or type a question";
+    const sel = $("tts");
+    const names = { elevenlabs: "ElevenLabs", sarvam: "Sarvam AI", browser: "Browser voice (free)" };
+    for (const p of cfg.tts_providers) { const o = document.createElement("option"); o.value = p; o.textContent = names[p] || p; sel.append(o); }
+    sel.value = cfg.default_tts_provider;
+    if (!cfg.groq_ready) setStatus("GROQ_API_KEY is missing in .env, so the bot cannot answer yet.", true);
+  } catch { $("engine").textContent = "Cannot reach the server."; }
+  refreshTable(); refreshCafe();
+  $("handsfree").checked = store.get("voicebot.handsfree") !== "0";
+  $("handsfree").addEventListener("change", () => store.set("voicebot.handsfree", $("handsfree").checked ? "1" : "0"));
+  const saved = store.get("voicebot.conversation");
+  if (saved) await openConversation(saved); else refreshConvs();
+})();
+</script>
+</body>
+</html>
